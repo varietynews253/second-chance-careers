@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: second-chance-careers-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci && npm run db:generate && npm run build --workspace @second-chance-careers/api
+    startCommand: npm run db:migrate && npm run start --workspace @second-chance-careers/api
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: second-chance-careers-db
+          property: connectionString
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+
+  - type: web
+    name: second-chance-careers-web
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci && npm run db:generate && npm run build --workspace @second-chance-careers/web
+    startCommand: npm run start --workspace @second-chance-careers/web
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: second-chance-careers-api
+          property: host
+      - key: NEXTAUTH_SECRET
+        fromService:
+          type: web
+          name: second-chance-careers-api
+          envVarKey: NEXTAUTH_SECRET
+      - key: NEXTAUTH_URL
+        fromService:
+          type: web
+          name: second-chance-careers-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: DATABASE_URL
+        fromDatabase:
+          name: second-chance-careers-db
+          property: connectionString
+
+databases:
+  - name: second-chance-careers-db
+    databaseName: second_chance_careers
+    user: second_chance_careers
+    plan: free
+    region: oregon
+    ipAllowList: []
