@@ -63,6 +63,17 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as { role?: string }).role ?? 'candidate';
       }
 
+      if (token.sub) {
+        const databaseUser = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: { role: true },
+        });
+
+        if (databaseUser?.role) {
+          token.role = databaseUser.role;
+        }
+      }
+
       return token;
     },
   },

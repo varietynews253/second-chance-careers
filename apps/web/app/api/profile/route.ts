@@ -24,7 +24,11 @@ export async function GET() {
   }
 
   const userId = sessionUser.id;
-  const [candidateProfile, employerProfile] = await Promise.all([
+  const [user, candidateProfile, employerProfile] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    }).catch(() => null),
     prisma.candidateProfile.findUnique({ where: { userId } }).catch(() => null),
     prisma.employerProfile.findUnique({ where: { userId } }).catch(() => null),
   ]);
@@ -32,7 +36,7 @@ export async function GET() {
   return NextResponse.json({
     candidate: candidateProfile,
     employer: employerProfile,
-    role: (sessionUser.role as string | undefined) ?? 'candidate',
+    role: user?.role ?? (sessionUser.role as string | undefined) ?? 'candidate',
   });
 }
 
@@ -55,43 +59,48 @@ export async function POST(request: Request) {
     const userId = sessionUser.id;
     const { role, headline, summary, skills, experience, companyName, industry, description } = parsed.data;
 
-    if (role === 'candidate') {
-      const profile = await prisma.candidateProfile.upsert({
+    const profile = await prisma.$transaction(async (transaction) => {
+      await transaction.user.update({
+        where: { id: userId },
+        data: { role },
+      });
+
+      if (role === 'candidate') {
+        return transaction.candidateProfile.upsert({
+          where: { userId },
+          update: {
+            headline: headline || null,
+            summary: summary || null,
+            skills: skills.map((skill) => skill.trim()).filter(Boolean),
+            experience: experience || null,
+          },
+          create: {
+            userId,
+            headline: headline || null,
+            summary: summary || null,
+            skills: skills.map((skill) => skill.trim()).filter(Boolean),
+            experience: experience || null,
+          },
+        });
+      }
+
+      return transaction.employerProfile.upsert({
         where: { userId },
         update: {
-          headline: headline || null,
-          summary: summary || null,
-          skills: skills.map((skill) => skill.trim()).filter(Boolean),
-          experience: experience || null,
+          companyName: companyName || null,
+          industry: industry || null,
+          description: description || null,
         },
         create: {
           userId,
-          headline: headline || null,
-          summary: summary || null,
-          skills: skills.map((skill) => skill.trim()).filter(Boolean),
-          experience: experience || null,
+          companyName: companyName || null,
+          industry: industry || null,
+          description: description || null,
         },
       });
-
-      return NextResponse.json({ ok: true, profile });
-    }
-
-    const profile = await prisma.employerProfile.upsert({
-      where: { userId },
-      update: {
-        companyName: companyName || null,
-        industry: industry || null,
-        description: description || null,
-      },
-      create: {
-        userId,
-        companyName: companyName || null,
-        industry: industry || null,
-        description: description || null,
-      },
     });
 
-    return NextResponse.json({ ok: true, profile });
+    return NextResponse.json({ ok: true, profile, role });
   } catch (error) {
     console.error('Profile save error:', error);
     return NextResponse.json({ error: 'Profile could not be saved.' }, { status: 500 });
